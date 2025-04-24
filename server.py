@@ -16,9 +16,9 @@ from database import Database
 from config import TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID, WEB_APP_URL, PORT
 import uuid
 import asyncio
-from threading import Thread
-import gunicorn.app.base
-from gunicorn.arbiter import Arbiter
+import subprocess
+import signal
+import sys
 
 # Initialize Flask app
 app = Flask(__name__, static_folder="static")
@@ -44,7 +44,7 @@ def get_public_ip():
 # Update .env with WEB_APP_URL
 def update_web_app_url():
     public_ip = get_public_ip()
-    web_app_url = f"http://{public_ip}:{PORT}"
+    web_app_url = f"https://{public_ip}:{PORT}"  # Use HTTPS
     with open(".env", "r") as f:
         lines = f.readlines()
     with open(".env", "w") as f:
@@ -177,7 +177,7 @@ async def show_dashboard(query, user_id):
         f"📊 *Your Dashboard* 📊\n"
         f"💰 Balance: ₹{balance}\n"
         f"🎰 Spins Left: {spins_left}\n"
-        f"👥 Referrals: ${referrals}/15\n"
+        f"👥 Referrals: {referrals}/15\n"
         f"🎁 Referral Earnings: ₹{referral_earnings}\n"
         f"{'✅ Ready to withdraw!' if referrals >= 15 and balance >= 100 else '🔒 Need 15 referrals and ₹100 to withdraw'}"
     )
@@ -197,7 +197,7 @@ async def show_referral(query, user_id):
         f"👥 *Invite Friends & Earn!*\n"
         f"Share your referral link below and earn 1 spin per referral!\n"
         f"📎 Referral Link: `{referral_link}`\n"
-        f"👥 Current Referrals: ${referrals}/15\n"
+        f"👥 Current Referrals: {referrals}/15\n"
         f"💡 *Note*: You need 15 referrals to unlock ₹100 withdrawal."
     )
     keyboard = [
@@ -319,30 +319,23 @@ async def referral_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await start(update, context)
 
-# Gunicorn application class
-class StandaloneGunicornApplication(gunicorn.app.base.BaseApplication):
-    def __init__(self, app, options=None):
-        self.options = options or {}
-        self.application = app
-        super().__init__()
-
-    def load_config(self):
-        for key, value in self.options.items():
-            self.cfg.set(key.lower(), value)
-
-    def load(self):
-        return self.application
-
 # Function to run Flask app with Gunicorn
 def run_flask():
     logger.info(f"Starting Flask server on port {PORT}")
-    options = {
-        'bind': f'0.0.0.0:{PORT}',
-        'workers': 1,
-        'threads': 1,
-        'timeout': 30,
-    }
-    StandaloneGunicornApplication(app, options).run()
+    cmd = [
+        "gunicorn",
+        "--bind", f"0.0.0.0:{PORT}",
+        "--workers", "1",
+        "--threads", "1",
+        "--timeout", "30",
+        "server:app"
+    ]
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, stderr = process.communicate()
+    if process.returncode != 0:
+        logger.error(f"Gunicorn failed: {stderr.decode()}")
+    else:
+        logger.info("Gunicorn started successfully")
 
 # Function to run Telegram bot
 async def run_bot():
@@ -380,16 +373,28 @@ def main():
     asyncio.set_event_loop(loop)
     logger.info("Initialized new event loop for Telegram bot")
 
-    # Start Flask in a separate thread
-    flask_thread = Thread(target=run_flask)
-    flask_thread.start()
+    # Start Flask in a separate process
+    flask_process = subprocess.Popen(
+        ["python3", "-m", "gunicorn", "--bind", f"0.0.0.0:{PORT}", "--workers", "1", "--threads", "1", "--timeout", "30", "server:app"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    logger.info(f"Started Flask process with PID {flask_process.pid}")
 
     # Run Telegram bot in the main thread
     try:
         loop.run_until_complete(run_bot())
+    except KeyboardInterrupt:
+        logger.info("Received shutdown signal")
     except Exception as e:
         logger.error(f"Failed to run bot: {e}")
     finally:
+        # Shutdown Flask process
+        if flask_process.poll() is None:
+            flask_process.send_signal(signal.SIGTERM)
+            flask_process.wait()
+            logger.info("Flask process terminated")
+        # Shutdown event loop
         loop.run_until_complete(loop.shutdown_asyncgens())
         loop.close()
         logger.info("Event loop closed")
