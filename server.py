@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, send_from_directory
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -11,11 +11,11 @@ from telegram.ext import (
 import logging
 import os
 import random
+import requests
 from database import Database
-from config import TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID, WEB_APP_URL
+from config import TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID, WEB_APP_URL, PORT
 import uuid
 from threading import Thread
-from pyngrok import ngrok
 
 # Initialize Flask app
 app = Flask(__name__, static_folder="static")
@@ -28,6 +28,35 @@ logger = logging.getLogger(__name__)
 
 # Initialize MongoDB
 db = Database()
+
+# Function to get public IP
+def get_public_ip():
+    try:
+        response = requests.get('https://api.ipify.org?format=json', timeout=5)
+        return response.json()['ip']
+    except Exception as e:
+        logger.error(f"Failed to get public IP: {e}")
+        return os.getenv("VPS_PUBLIC_IP", "YOUR_VPS_PUBLIC_IP")  # Fallback to .env or manual input
+
+# Update .env with WEB_APP_URL
+def update_web_app_url():
+    public_ip = get_public_ip()
+    web_app_url = f"http://{public_ip}:{PORT}"
+    with open(".env", "r") as f:
+        lines = f.readlines()
+    with open(".env", "w") as f:
+        found = False
+        for line in lines:
+            if line.startswith("WEB_APP_URL="):
+                f.write(f"WEB_APP_URL={web_app_url}\n")
+                found = True
+            else:
+                f.write(line)
+        if not found:
+            f.write(f"\nWEB_APP_URL={web_app_url}\n")
+    os.environ["WEB_APP_URL"] = web_app_url
+    logger.info(f"Set WEB_APP_URL to {web_app_url}")
+    return web_app_url
 
 # Serve static files (Mini App)
 @app.route('/')
@@ -299,18 +328,15 @@ def run_bot():
     application.run_polling()
 
 def main():
-    # Start Ngrok tunnel
-    public_url = ngrok.connect(5000).public_url
-    print(f"Ngrok URL: {public_url}")
-    with open(".env", "a") as f:
-        f.write(f"\nWEB_APP_URL={public_url}")
+    # Update WEB_APP_URL
+    update_web_app_url()
 
     # Start bot in a separate thread
     bot_thread = Thread(target=run_bot)
     bot_thread.start()
 
     # Start Flask app
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=PORT)
 
 if __name__ == "__main__":
     main()
