@@ -1,4 +1,3 @@
-### bot.py
 import logging
 import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -12,7 +11,7 @@ from telegram.ext import (
 )
 import random
 from database import Database
-from config import TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID
+from config import TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID, WEB_APP_URL
 import uuid
 
 # Logging setup
@@ -35,17 +34,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.create_user(user_id, username, referral_code)
 
     keyboard = [
-        [InlineKeyboardButton("🎰 Spin & Win", callback_data="spin")],
+        [InlineKeyboardButton("🎰 Launch Spin & Win Mini App", web_app={"url": WEB_APP_URL})],
         [InlineKeyboardButton("📊 Dashboard", callback_data="dashboard")],
         [InlineKeyboardButton("👥 Refer Friends", callback_data="refer")],
-        [InlineKeyboardButton("💸 Withdraw", callback_data="withdraw")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     welcome_message = (
         f"Welcome, {username}! 🎉\n"
-        "Play Spin & Win to earn rewards! You get 3 free spins daily. "
-        "Invite friends to earn more spins and unlock withdrawals! 🚀"
+        "Launch the Spin & Win Mini App to play and earn rewards! "
+        "You get 3 free spins daily. Invite friends to unlock more spins and withdrawals! 🚀"
     )
     await update.message.reply_text(welcome_message, reply_markup=reply_markup)
 
@@ -55,9 +53,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     data = query.data
 
-    if data == "spin":
-        await handle_spin(query, user_id)
-    elif data == "dashboard":
+    if data == "dashboard":
         await show_dashboard(query, user_id)
     elif data == "refer":
         await show_referral(query, user_id)
@@ -68,37 +64,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["awaiting_withdrawal"] = True
     elif data == "back":
         await show_main_menu(query)
-
-async def handle_spin(query, user_id):
-    user = db.get_user(user_id)
-    spins_left = user.get("spins_left", 0)
-
-    if spins_left <= 0:
-        await query.message.reply_text(
-            "No spins left! Invite friends to earn more spins. 👥",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("👥 Refer", callback_data="refer")]])
-        )
-        return
-
-    # Spin logic
-    rewards = [10, 20, 30, 50, 0]  # Possible rewards
-    weights = [0.4, 0.3, 0.2, 0.05, 0.05]  # Probabilities
-    reward = random.choices(rewards, weights=weights, k=1)[0]
-
-    db.update_spin(user_id, reward)
-    spins_left -= 1
-    balance = user.get("balance", 0) + reward
-
-    message = (
-        f"🎰 Spin Result: You won ₹{reward}! 🎉\n"
-        f"Spins Left: {spins_left}\n"
-        f"Current Balance: ₹{balance}"
-    )
-    keyboard = [
-        [InlineKeyboardButton("🔄 Spin Again", callback_data="spin")],
-        [InlineKeyboardButton("🏠 Home", callback_data="back")]
-    ]
-    await query.message.reply_text(message, reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def show_dashboard(query, user_id):
     user = db.get_user(user_id)
@@ -115,7 +80,10 @@ async def show_dashboard(query, user_id):
         f"🎁 Referral Earnings: ₹{referral_earnings}\n"
         f"{'✅ Ready to withdraw!' if referrals >= 15 and balance >= 100 else '🔒 Need 15 referrals and ₹100 to withdraw'}"
     )
-    keyboard = [[InlineKeyboardButton("🏠 Home", callback_data="back")]]
+    keyboard = [
+        [InlineKeyboardButton("🎰 Launch Mini App", web_app={"url": WEB_APP_URL})],
+        [InlineKeyboardButton("🏠 Home", callback_data="back")]
+    ]
     await query.message.reply_text(message, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def show_referral(query, user_id):
@@ -131,7 +99,10 @@ async def show_referral(query, user_id):
         f"👥 Current Referrals: {referrals}/15\n"
         f"💡 *Note*: You need 15 referrals to unlock ₹100 withdrawal."
     )
-    keyboard = [[InlineKeyboardButton("🏠 Home", callback_data="back")]]
+    keyboard = [
+        [InlineKeyboardButton("🎰 Launch Mini App", web_app={"url": WEB_APP_URL})],
+        [InlineKeyboardButton("🏠 Home", callback_data="back")]
+    ]
     await query.message.reply_text(message, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def initiate_withdrawal(query, user_id):
@@ -223,10 +194,9 @@ async def admin_reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_main_menu(query):
     keyboard = [
-        [InlineKeyboardButton("🎰 Spin & Win", callback_data="spin")],
+        [InlineKeyboardButton("🎰 Launch Spin & Win Mini App", web_app={"url": WEB_APP_URL})],
         [InlineKeyboardButton("📊 Dashboard", callback_data="dashboard")],
         [InlineKeyboardButton("👥 Refer Friends", callback_data="refer")],
-        [InlineKeyboardButton("💸 Withdraw", callback_data="withdraw")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.message.reply_text("🏠 Welcome back! Choose an option:", reply_markup=reply_markup)
@@ -243,7 +213,7 @@ async def referral_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.add_referral(referrer["user_id"], user_id)
             db.create_user(user_id, username, str(uuid.uuid4())[:8])
             await update.message.reply_text(
-                f"🎉 You've joined via {referrer['username']}'s referral! Start spinning now!"
+                f"🎉 You've joined via {referrer['username']}'s referral! Launch the Mini App to start spinning!"
             )
         else:
             await update.message.reply_text("Invalid or self-referral link!")
