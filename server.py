@@ -19,15 +19,20 @@ import asyncio
 import subprocess
 import signal
 import sys
+import ssl
+from gunicorn.app.base import BaseApplication
 
-# Initialize Flask app
-app = Flask(__name__, static_folder="static")
+# Suppress httpx logs
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
-# Logging setup
+# Configure logging for main app
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Initialize Flask app
+app = Flask(__name__, static_folder="static")
 
 # Initialize MongoDB
 db = Database()
@@ -60,6 +65,24 @@ def update_web_app_url():
     os.environ["WEB_APP_URL"] = web_app_url
     logger.info(f"Set WEB_APP_URL to {web_app_url}")
     return web_app_url
+
+# Generate self-signed certificate if not exists
+def generate_self_signed_cert():
+    cert_dir = "/root/spin/ssl"
+    cert_file = f"{cert_dir}/self.crt"
+    key_file = f"{cert_dir}/self.key"
+    
+    if not os.path.exists(cert_dir):
+        os.makedirs(cert_dir)
+    
+    if not os.path.exists(cert_file) or not os.path.exists(key_file):
+        logger.info("Generating self-signed SSL certificate")
+        subprocess.run([
+            "openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048",
+            "-keyout", key_file, "-out", cert_file, "-subj", "/CN=116.203.92.20"
+        ], check=True)
+    
+    return cert_file, key_file
 
 # Serve static files (Mini App)
 @app.route('/')
@@ -319,6 +342,35 @@ async def referral_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await start(update, context)
 
+# Gunicorn application class with SSL
+class StandaloneGunicornApplication(BaseApplication):
+    def __init__(self, app, options=None):
+        self.options = options or {}
+        self.application = app
+        super().__init__()
+
+    def load_config(self):
+        for key, value in self.options.items():
+            self.cfg.set(key.lower(), value)
+
+    def load(self):
+        return self.application
+
+# Function to run Flask app with Gunicorn and SSL
+def run_flask():
+    logger.info(f"Starting Flask server on port {PORT} with HTTPS")
+    cert_file, key_file = generate_self_signed_cert()
+    options = {
+        "bind": f"0.0.0.0:{PORT}",
+        "workers": 1,
+        "threads": 1,
+        "timeout": 30,
+        "certfile": cert_file,
+        "keyfile": key_file,
+        "ssl_version": ssl.PROTOCOL_TLS_SERVER,
+    }
+    StandaloneGunicornApplication(app, options).run()
+
 # Function to run Telegram bot
 async def run_bot():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
@@ -355,7 +407,7 @@ def main():
 
     # Start Flask in a separate process
     flask_process = subprocess.Popen(
-        ["python3", "-m", "gunicorn", "--bind", f"0.0.0.0:{PORT}", "--workers", "1", "--threads", "1", "--timeout", "30", "server:app"],
+        ["python3", "-c", f"from server import run_flask; run_flask()"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
