@@ -16,11 +16,8 @@ from database import Database
 from config import TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID, WEB_APP_URL, PORT
 import uuid
 import asyncio
-import subprocess
-import signal
-import sys
-import ssl
 from threading import Thread
+import sys
 
 # Suppress httpx logs
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -48,8 +45,7 @@ def get_public_ip():
 
 # Update .env with WEB_APP_URL
 def update_web_app_url():
-    public_ip = get_public_ip()
-    web_app_url = f"https://{public_ip}:{PORT}"  # Force HTTPS
+    web_app_url = os.getenv("WEB_APP_URL", f"https://your-tunnel.trycloudflare.com")  # Default to Cloudflare Tunnel URL
     with open(".env", "r") as f:
         lines = f.readlines()
     with open(".env", "w") as f:
@@ -65,62 +61,6 @@ def update_web_app_url():
     os.environ["WEB_APP_URL"] = web_app_url
     logger.info(f"Set WEB_APP_URL to {web_app_url}")
     return web_app_url
-
-# Generate self-signed certificate
-def generate_self_signed_cert():
-    cert_dir = "/root/spin/ssl"
-    cert_file = f"{cert_dir}/self.crt"
-    key_file = f"{cert_dir}/self.key"
-    
-    if not os.path.exists(cert_dir):
-        os.makedirs(cert_dir)
-    
-    if not os.path.exists(cert_file) or not os.path.exists(key_file):
-        logger.info("Generating self-signed SSL certificate")
-        try:
-            # Create a configuration file for OpenSSL
-            config_file = f"{cert_dir}/cert.conf"
-            with open(config_file, "w") as f:
-                f.write("""
-[req]
-default_bits = 2048
-prompt = no
-default_md = sha256
-distinguished_name = dn
-x509_extensions = v3_req
-
-[dn]
-C = US
-ST = State
-L = City
-O = Organization
-OU = Unit
-CN = 116.203.92.20
-
-[v3_req]
-subjectAltName = @alt_names
-
-[alt_names]
-IP.1 = 116.203.92.20
-                """)
-            
-            # Generate certificate with SAN
-            subprocess.run([
-                "openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048",
-                "-keyout", key_file, "-out", cert_file, "-config", config_file
-            ], check=True)
-            logger.info(f"Generated certificate: {cert_file}, key: {key_file}")
-            os.remove(config_file)  # Clean up config file
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to generate certificate: {e}")
-            sys.exit(1)
-    
-    # Verify certificate and key exist
-    if not os.path.exists(cert_file) or not os.path.exists(key_file):
-        logger.error("Certificate or key file not found")
-        sys.exit(1)
-    
-    return cert_file, key_file
 
 # Serve static files (Mini App)
 @app.route('/')
@@ -380,16 +320,13 @@ async def referral_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await start(update, context)
 
-# Function to run Flask app with SSL
+# Function to run Flask app
 def run_flask():
-    logger.info(f"Starting Flask server on port {PORT} with HTTPS")
-    cert_file, key_file = generate_self_signed_cert()
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    logger.info(f"Starting Flask server on port {PORT} with HTTP")
     try:
-        context.load_cert_chain(certfile=cert_file, keyfile=key_file)
-        app.run(host="0.0.0.0", port=PORT, ssl_context=context, threaded=True)
+        app.run(host="0.0.0.0", port=PORT, threaded=True)
     except Exception as e:
-        logger.error(f"Failed to start Flask server with HTTPS: {e}")
+        logger.error(f"Failed to start Flask server: {e}")
         sys.exit(1)
 
 # Function to run Telegram bot
@@ -423,7 +360,7 @@ def main():
     # Update WEB_APP_URL
     web_app_url = update_web_app_url()
     if not web_app_url.startswith("https"):
-        logger.error("WEB_APP_URL must use HTTPS for Telegram Web Apps")
+        logger.error("WEB_APP_URL must use HTTPS for Telegram Web Apps. Update to Cloudflare Tunnel URL.")
         sys.exit(1)
 
     # Start Flask in a separate thread
