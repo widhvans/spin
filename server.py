@@ -17,7 +17,8 @@ from config import TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID, WEB_APP_URL, PORT
 import uuid
 import asyncio
 from threading import Thread
-from wsgiref.simple_server import make_server
+import gunicorn.app.base
+from gunicorn.arbiter import Arbiter
 
 # Initialize Flask app
 app = Flask(__name__, static_folder="static")
@@ -176,7 +177,7 @@ async def show_dashboard(query, user_id):
         f"📊 *Your Dashboard* 📊\n"
         f"💰 Balance: ₹{balance}\n"
         f"🎰 Spins Left: {spins_left}\n"
-        f"👥 Referrals: {referrals}/15\n"
+        f"👥 Referrals: ${referrals}/15\n"
         f"🎁 Referral Earnings: ₹{referral_earnings}\n"
         f"{'✅ Ready to withdraw!' if referrals >= 15 and balance >= 100 else '🔒 Need 15 referrals and ₹100 to withdraw'}"
     )
@@ -196,7 +197,7 @@ async def show_referral(query, user_id):
         f"👥 *Invite Friends & Earn!*\n"
         f"Share your referral link below and earn 1 spin per referral!\n"
         f"📎 Referral Link: `{referral_link}`\n"
-        f"👥 Current Referrals: {referrals}/15\n"
+        f"👥 Current Referrals: ${referrals}/15\n"
         f"💡 *Note*: You need 15 referrals to unlock ₹100 withdrawal."
     )
     keyboard = [
@@ -318,12 +319,32 @@ async def referral_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await start(update, context)
 
-# Function to run Flask app
+# Gunicorn application class
+class StandaloneGunicornApplication(gunicorn.app.base.BaseApplication):
+    def __init__(self, app, options=None):
+        self.options = options or {}
+        self.application = app
+        super().__init__()
+
+    def load_config(self):
+        for key, value in self.options.items():
+            self.cfg.set(key.lower(), value)
+
+    def load(self):
+        return self.application
+
+# Function to run Flask app with Gunicorn
 def run_flask():
     logger.info(f"Starting Flask server on port {PORT}")
-    httpd = make_server('0.0.0.0', PORT, app)
-    httpd.serve_forever()
+    options = {
+        'bind': f'0.0.0.0:{PORT}',
+        'workers': 1,
+        'threads': 1,
+        'timeout': 30,
+    }
+    StandaloneGunicornApplication(app, options).run()
 
+# Function to run Telegram bot
 async def run_bot():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -334,34 +355,44 @@ async def run_bot():
     application.add_handler(CommandHandler("reject", admin_reject))
 
     try:
-        await application.run_polling()
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()
+        logger.info("Telegram bot started polling")
+        # Keep the bot running
+        while True:
+            await asyncio.sleep(3600)  # Sleep to keep the loop alive
     except Exception as e:
         logger.error(f"Error in bot polling: {e}")
         raise
+    finally:
+        logger.info("Shutting down Telegram bot")
+        await application.updater.stop()
+        await application.stop()
+        await application.shutdown()
 
 def main():
     # Update WEB_APP_URL
     update_web_app_url()
 
-    # Initialize bot first to set up event loop
-    loop = asyncio.get_event_loop()
-    if loop.is_running():
-        logger.warning("Event loop already running, using existing loop")
-    else:
-        logger.info("Starting new event loop")
+    # Create a new event loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    logger.info("Initialized new event loop for Telegram bot")
 
     # Start Flask in a separate thread
     flask_thread = Thread(target=run_flask)
     flask_thread.start()
 
-    # Run bot in the main thread
+    # Run Telegram bot in the main thread
     try:
         loop.run_until_complete(run_bot())
     except Exception as e:
         logger.error(f"Failed to run bot: {e}")
     finally:
-        if not loop.is_closed():
-            loop.close()
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.close()
+        logger.info("Event loop closed")
 
 if __name__ == "__main__":
     main()
