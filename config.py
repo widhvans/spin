@@ -6,3 +6,4 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID"))
+WEB_APP_URL = os.getenv("WEB_APP_URL")  # e.g., https://your-mini-app-domain.com
