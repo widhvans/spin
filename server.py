@@ -15,7 +15,9 @@ import requests
 from database import Database
 from config import TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID, WEB_APP_URL, PORT
 import uuid
+import asyncio
 from threading import Thread
+from werkzeug.serving import run_simple
 
 # Initialize Flask app
 app = Flask(__name__, static_folder="static")
@@ -316,7 +318,11 @@ async def referral_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await start(update, context)
 
-def run_bot():
+# Function to run Flask app
+def run_flask():
+    run_simple('0.0.0.0', PORT, app, use_reloader=False, use_debugger=False)
+
+async def run_bot():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", referral_start))
@@ -325,18 +331,18 @@ def run_bot():
     application.add_handler(CommandHandler("confirm", admin_confirm))
     application.add_handler(CommandHandler("reject", admin_reject))
 
-    application.run_polling()
+    await application.run_polling()
 
 def main():
     # Update WEB_APP_URL
     update_web_app_url()
 
-    # Start bot in a separate thread
-    bot_thread = Thread(target=run_bot)
-    bot_thread.start()
+    # Start Flask in a separate thread
+    flask_thread = Thread(target=run_flask)
+    flask_thread.start()
 
-    # Start Flask app
-    app.run(host="0.0.0.0", port=PORT)
+    # Run bot in the main thread with asyncio
+    asyncio.run(run_bot())
 
 if __name__ == "__main__":
     main()
