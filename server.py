@@ -20,7 +20,7 @@ import subprocess
 import signal
 import sys
 import ssl
-from gunicorn.app.base import BaseApplication
+from threading import Thread
 
 # Suppress httpx logs
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -78,13 +78,39 @@ def generate_self_signed_cert():
     if not os.path.exists(cert_file) or not os.path.exists(key_file):
         logger.info("Generating self-signed SSL certificate")
         try:
+            # Create a configuration file for OpenSSL
+            config_file = f"{cert_dir}/cert.conf"
+            with open(config_file, "w") as f:
+                f.write("""
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+x509_extensions = v3_req
+
+[dn]
+C = US
+ST = State
+L = City
+O = Organization
+OU = Unit
+CN = 116.203.92.20
+
+[v3_req]
+subjectAltName = @alt_names
+
+[alt_names]
+IP.1 = 116.203.92.20
+                """)
+            
+            # Generate certificate with SAN
             subprocess.run([
                 "openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048",
-                "-keyout", key_file, "-out", cert_file,
-                "-subj", "/C=US/ST=State/L=City/O=Organization/OU=Unit/CN=116.203.92.20",
-                "-addext", "subjectAltName=IP:116.203.92.20"
+                "-keyout", key_file, "-out", cert_file, "-config", config_file
             ], check=True)
             logger.info(f"Generated certificate: {cert_file}, key: {key_file}")
+            os.remove(config_file)  # Clean up config file
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to generate certificate: {e}")
             sys.exit(1)
@@ -354,36 +380,16 @@ async def referral_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await start(update, context)
 
-# Gunicorn application class with SSL
-class StandaloneGunicornApplication(BaseApplication):
-    def __init__(self, app, options=None):
-        self.options = options or {}
-        self.application = app
-        super().__init__()
-
-    def load_config(self):
-        for key, value in self.options.items():
-            self.cfg.set(key.lower(), value)
-
-    def load(self):
-        return self.application
-
-# Function to run Flask app with Gunicorn and SSL
+# Function to run Flask app with SSL
 def run_flask():
     logger.info(f"Starting Flask server on port {PORT} with HTTPS")
     cert_file, key_file = generate_self_signed_cert()
-    options = {
-        "bind": f"0.0.0.0:{PORT}",
-        "workers": 1,
-        "threads": 1,
-        "timeout": 30,
-        "certfile": cert_file,
-        "keyfile": key_file,
-    }
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     try:
-        StandaloneGunicornApplication(app, options).run()
+        context.load_cert_chain(certfile=cert_file, keyfile=key_file)
+        app.run(host="0.0.0.0", port=PORT, ssl_context=context, threaded=True)
     except Exception as e:
-        logger.error(f"Failed to start Flask server: {e}")
+        logger.error(f"Failed to start Flask server with HTTPS: {e}")
         sys.exit(1)
 
 # Function to run Telegram bot
@@ -420,13 +426,10 @@ def main():
         logger.error("WEB_APP_URL must use HTTPS for Telegram Web Apps")
         sys.exit(1)
 
-    # Start Flask in a separate process
-    flask_process = subprocess.Popen(
-        ["python3", "-c", "from server import run_flask; run_flask()"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-    logger.info(f"Started Flask process with PID {flask_process.pid}")
+    # Start Flask in a separate thread
+    flask_thread = Thread(target=run_flask)
+    flask_thread.start()
+    logger.info("Started Flask server thread")
 
     # Create a new event loop
     loop = asyncio.new_event_loop()
@@ -441,11 +444,6 @@ def main():
     except Exception as e:
         logger.error(f"Failed to run bot: {e}")
     finally:
-        # Shutdown Flask process
-        if flask_process.poll() is None:
-            flask_process.send_signal(signal.SIGTERM)
-            flask_process.wait()
-            logger.info("Flask process terminated")
         # Shutdown event loop
         loop.run_until_complete(loop.shutdown_asyncgens())
         loop.close()
