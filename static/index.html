@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spin & Win Mini App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div id="app" class="container mx-auto p-4">
+        <header class="bg-blue-600 text-white p-4 rounded-lg shadow-md mb-4">
+            <h1 class="text-2xl font-bold">🎰 Spin & Win</h1>
+            <p class="text-sm">Spin to win rewards! 3 free spins daily.</p>
+        </header>
+        <div id="user-info" class="bg-white p-4 rounded-lg shadow-md mb-4">
+            <p>Loading user data...</p>
+        </div>
+        <div id="spin-section" class="bg-white p-4 rounded-lg shadow-md mb-4">
+            <h2 class="text-xl font-semibold mb-2">🎰 Spin the Wheel</h2>
+            <div id="wheel" class="text-center">
+                <div class="w-64 h-64 bg-blue-200 rounded-full mx-auto flex items-center justify-center">
+                    <span class="text-2xl">Click to Spin!</span>
+                </div>
+            </div>
+            <button id="spin-button" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Spin Now</button>
+            <p id="spin-result" class="mt-2 text-green-600"></p>
+        </div>
+        <div id="dashboard" class="bg-white p-4 rounded-lg shadow-md mb-4">
+            <h2 class="text-xl font-semibold mb-2">📊 Dashboard</h2>
+            <p id="dashboard-content">Loading...</p>
+        </div>
+        <div id="referral" class="bg-white p-4 rounded-lg shadow-md mb-4">
+            <h2 class="text-xl font-semibold mb-2">👥 Refer Friends</h2>
+            <p id="referral-link">Loading...</p>
+            <button id="copy-referral" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Copy Link</button>
+        </div>
+        <div id="withdrawal" class="bg-white p-4 rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold mb-2">💸 Withdraw</h2>
+            <p id="withdrawal-status">Loading...</p>
+            <button id="withdraw-button" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Request Withdrawal</button>
+        </div>
+    </div>
+    <script src="/app.js"></script>
+</body>
+</html>
