@@ -17,7 +17,7 @@ from config import TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID, WEB_APP_URL, PORT
 import uuid
 import asyncio
 from threading import Thread
-from werkzeug.serving import run_simple
+from waitress import serve
 
 # Initialize Flask app
 app = Flask(__name__, static_folder="static")
@@ -320,7 +320,8 @@ async def referral_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Function to run Flask app
 def run_flask():
-    run_simple('0.0.0.0', PORT, app, use_reloader=False, use_debugger=False)
+    logger.info(f"Starting Flask server on port {PORT}")
+    serve(app, host="0.0.0.0", port=PORT)
 
 async def run_bot():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
