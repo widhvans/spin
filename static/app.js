@@ -73,7 +73,7 @@ function updateUI(userData) {
         <p>👥 Referrals: ${referrals.length}/15</p>
         <p>🎁 Referral Earnings: ₹${referral_earnings}</p>
         <p>${referrals.length >= 15 && balance >= 100 ? "✅ Ready to withdraw!" : "🔒 Need 15 referrals and ₹100 to withdraw"}</p>
-    `;
+    ` 
 
     document.getElementById("referral-link").innerHTML = `
         <p>Share your referral link:</p>
