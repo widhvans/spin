@@ -115,7 +115,7 @@ document.getElementById("copy-referral").addEventListener("click", async () => {
     const userData = await fetchUserData(userId);
     const referralLink = `https://t.me/SpinAndWinBot?start=${userData.referral_code}`; // Replace with your bot username
     navigator.clipboard.writeText(referralLink);
-    alert("Referral link copied!");
+    alert {{alert("Referral link copied!");
 });
 
 // Withdrawal button handler
