@@ -16,8 +16,8 @@ from database import Database
 from config import TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID, WEB_APP_URL, PORT
 import uuid
 import asyncio
-from multiprocessing import Process
-from waitress import serve
+from threading import Thread
+from wsgiref.simple_server import make_server
 
 # Initialize Flask app
 app = Flask(__name__, static_folder="static")
@@ -321,7 +321,8 @@ async def referral_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Function to run Flask app
 def run_flask():
     logger.info(f"Starting Flask server on port {PORT}")
-    serve(app, host="0.0.0.0", port=PORT)
+    httpd = make_server('0.0.0.0', PORT, app)
+    httpd.serve_forever()
 
 async def run_bot():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
@@ -332,18 +333,35 @@ async def run_bot():
     application.add_handler(CommandHandler("confirm", admin_confirm))
     application.add_handler(CommandHandler("reject", admin_reject))
 
-    await application.run_polling()
+    try:
+        await application.run_polling()
+    except Exception as e:
+        logger.error(f"Error in bot polling: {e}")
+        raise
 
 def main():
     # Update WEB_APP_URL
     update_web_app_url()
 
-    # Start Flask in a separate process
-    flask_process = Process(target=run_flask)
-    flask_process.start()
+    # Initialize bot first to set up event loop
+    loop = asyncio.get_event_loop()
+    if loop.is_running():
+        logger.warning("Event loop already running, using existing loop")
+    else:
+        logger.info("Starting new event loop")
 
-    # Run bot in the main thread with asyncio
-    asyncio.run(run_bot())
+    # Start Flask in a separate thread
+    flask_thread = Thread(target=run_flask)
+    flask_thread.start()
+
+    # Run bot in the main thread
+    try:
+        loop.run_until_complete(run_bot())
+    except Exception as e:
+        logger.error(f"Failed to run bot: {e}")
+    finally:
+        if not loop.is_closed():
+            loop.close()
 
 if __name__ == "__main__":
     main()
