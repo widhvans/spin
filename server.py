@@ -39,12 +39,12 @@ def get_public_ip():
         return response.json()['ip']
     except Exception as e:
         logger.error(f"Failed to get public IP: {e}")
-        return os.getenv("VPS_PUBLIC_IP", "YOUR_VPS_PUBLIC_IP")  # Fallback to .env or manual input
+        return os.getenv("VPS_PUBLIC_IP", "116.203.92.20")  # Fallback to .env or default
 
 # Update .env with WEB_APP_URL
 def update_web_app_url():
     public_ip = get_public_ip()
-    web_app_url = f"https://{public_ip}:{PORT}"  # Use HTTPS
+    web_app_url = f"https://{public_ip}:{PORT}"  # Force HTTPS
     with open(".env", "r") as f:
         lines = f.readlines()
     with open(".env", "w") as f:
@@ -319,24 +319,6 @@ async def referral_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await start(update, context)
 
-# Function to run Flask app with Gunicorn
-def run_flask():
-    logger.info(f"Starting Flask server on port {PORT}")
-    cmd = [
-        "gunicorn",
-        "--bind", f"0.0.0.0:{PORT}",
-        "--workers", "1",
-        "--threads", "1",
-        "--timeout", "30",
-        "server:app"
-    ]
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout, stderr = process.communicate()
-    if process.returncode != 0:
-        logger.error(f"Gunicorn failed: {stderr.decode()}")
-    else:
-        logger.info("Gunicorn started successfully")
-
 # Function to run Telegram bot
 async def run_bot():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
@@ -366,12 +348,10 @@ async def run_bot():
 
 def main():
     # Update WEB_APP_URL
-    update_web_app_url()
-
-    # Create a new event loop
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    logger.info("Initialized new event loop for Telegram bot")
+    web_app_url = update_web_app_url()
+    if not web_app_url.startswith("https"):
+        logger.error("WEB_APP_URL must use HTTPS for Telegram Web Apps")
+        sys.exit(1)
 
     # Start Flask in a separate process
     flask_process = subprocess.Popen(
@@ -380,6 +360,11 @@ def main():
         stderr=subprocess.PIPE
     )
     logger.info(f"Started Flask process with PID {flask_process.pid}")
+
+    # Create a new event loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    logger.info("Initialized new event loop for Telegram bot")
 
     # Run Telegram bot in the main thread
     try:
