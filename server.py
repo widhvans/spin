@@ -16,7 +16,7 @@ from database import Database
 from config import TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID, WEB_APP_URL, PORT
 import uuid
 import asyncio
-from threading import Thread
+from multiprocessing import Process
 from waitress import serve
 
 # Initialize Flask app
@@ -338,9 +338,9 @@ def main():
     # Update WEB_APP_URL
     update_web_app_url()
 
-    # Start Flask in a separate thread
-    flask_thread = Thread(target=run_flask)
-    flask_thread.start()
+    # Start Flask in a separate process
+    flask_process = Process(target=run_flask)
+    flask_process.start()
 
     # Run bot in the main thread with asyncio
     asyncio.run(run_bot())
