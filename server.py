@@ -66,7 +66,7 @@ def update_web_app_url():
     logger.info(f"Set WEB_APP_URL to {web_app_url}")
     return web_app_url
 
-# Generate self-signed certificate if not exists
+# Generate self-signed certificate
 def generate_self_signed_cert():
     cert_dir = "/root/spin/ssl"
     cert_file = f"{cert_dir}/self.crt"
@@ -77,10 +77,22 @@ def generate_self_signed_cert():
     
     if not os.path.exists(cert_file) or not os.path.exists(key_file):
         logger.info("Generating self-signed SSL certificate")
-        subprocess.run([
-            "openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048",
-            "-keyout", key_file, "-out", cert_file, "-subj", "/CN=116.203.92.20"
-        ], check=True)
+        try:
+            subprocess.run([
+                "openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048",
+                "-keyout", key_file, "-out", cert_file,
+                "-subj", "/C=US/ST=State/L=City/O=Organization/OU=Unit/CN=116.203.92.20",
+                "-addext", "subjectAltName=IP:116.203.92.20"
+            ], check=True)
+            logger.info(f"Generated certificate: {cert_file}, key: {key_file}")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to generate certificate: {e}")
+            sys.exit(1)
+    
+    # Verify certificate and key exist
+    if not os.path.exists(cert_file) or not os.path.exists(key_file):
+        logger.error("Certificate or key file not found")
+        sys.exit(1)
     
     return cert_file, key_file
 
@@ -367,9 +379,12 @@ def run_flask():
         "timeout": 30,
         "certfile": cert_file,
         "keyfile": key_file,
-        "ssl_version": ssl.PROTOCOL_TLS_SERVER,
     }
-    StandaloneGunicornApplication(app, options).run()
+    try:
+        StandaloneGunicornApplication(app, options).run()
+    except Exception as e:
+        logger.error(f"Failed to start Flask server: {e}")
+        sys.exit(1)
 
 # Function to run Telegram bot
 async def run_bot():
@@ -407,7 +422,7 @@ def main():
 
     # Start Flask in a separate process
     flask_process = subprocess.Popen(
-        ["python3", "-c", f"from server import run_flask; run_flask()"],
+        ["python3", "-c", "from server import run_flask; run_flask()"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
